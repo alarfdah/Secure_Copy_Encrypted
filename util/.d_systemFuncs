@@ -1,0 +1,1 @@
+libutil-g.a(systemFuncs.o): systemFuncs.c systemFuncs.h ../util/general.h

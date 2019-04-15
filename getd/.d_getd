@@ -1,0 +1,2 @@
+libget-g.a(getd.o): getd.c ../util/message.h ../util/general.h \
+ ../util/exit.h

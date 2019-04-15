@@ -1,0 +1,2 @@
+libget-g.a(clientProtocol.o): clientProtocol.c ../util/message.h \
+ ../util/general.h ../util/systemFuncs.h ../util/exit.h clientProtocol.h

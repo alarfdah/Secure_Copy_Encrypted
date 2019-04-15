@@ -1,0 +1,2 @@
+libutil-g.a(message.o): message.c message.h ../util/general.h exit.h \
+ ../util/string_util.h ../util/general.h

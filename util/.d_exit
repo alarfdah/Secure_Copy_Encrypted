@@ -1,0 +1,1 @@
+libutil-g.a(exit.o): exit.c exit.h ../util/general.h message.h

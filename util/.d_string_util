@@ -1,0 +1,1 @@
+libutil-g.a(string_util.o): string_util.c general.h string_util.h
