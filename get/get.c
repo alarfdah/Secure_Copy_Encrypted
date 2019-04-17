@@ -9,7 +9,7 @@ int socket; // the socket to communicate with the server
 int eid; // the eid for the socket
 FILE *destFile; // the destination file
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyPath
  *  Description:  verify a path
@@ -20,11 +20,11 @@ FILE *destFile; // the destination file
 static char *verifyPath(char *path) {
   int length = strlen(path);
 
-  if (length < 1) 
+  if (length < 1)
     return NULL;
 
   char *str = (char *)malloc(length+1);
-  
+
   if (str == NULL) {
     fprintf(stderr,"malloc() error\n");
     exit(-1);

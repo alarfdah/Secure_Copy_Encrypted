@@ -10,7 +10,7 @@ extern FILE *destFile; /* The destination file */
 
 static char sessionId[SID_LENGTH+1]; /* The session id */
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  invalidMessage
  *  Description:  Send a type 2 message and exit the program
@@ -27,10 +27,10 @@ static void invalidMessage(int socket, int mType) {
     exitProgram(errorMsg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  setSessionId
- *  Description:  set the session id 
+ *  Description:  set the session id
  *
  *	@param msg the type 1 message containing the session id
  * =====================================================================================
@@ -41,11 +41,11 @@ static void setSessionId(MessageType1 *msg) {
 
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  emitType2MessageAndExit
  *  Description:  emit a type 2 message received from the server to the console and exit
- *	
+ *
  *	@param msg a type 2 message
  * =====================================================================================
  */
@@ -59,7 +59,7 @@ static void emitType2MessageAndExit(MessageType2 *msg) {
   exitProgram(errorMsg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  processType1Message
  *  Description:  process a type 1 message from the server
@@ -81,7 +81,7 @@ static void processType1Message(int socket, char *msg) {
 
 }
 
-/* 
+/*
  * ===  FUNCTION  ======================================================================
  *         Name:  processFileContents
  *  Description:  process the (partial) contents of a file received from the server
@@ -94,7 +94,7 @@ static void processType1Message(int socket, char *msg) {
 static bool processFileContents(int socket,char *msg, int numBytes) {
   unsigned char mType = getMessageType(msg);
 
-  // if the message is type 5, the full file has been received 
+  // if the message is type 5, the full file has been received
   if (mType == TYPE5)
     return true;
 
@@ -128,8 +128,8 @@ static bool processFileContents(int socket,char *msg, int numBytes) {
        exitProgram(errorMsg);
      }
   }
- 
-  // process an error message from the server 
+
+  // process an error message from the server
 
   else if (mType == TYPE2) {
     emitType2MessageAndExit((MessageType2 *)msg);
@@ -143,7 +143,7 @@ static bool processFileContents(int socket,char *msg, int numBytes) {
 
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  receiveFile
  *  Description:  loop to receive the contents of a file from the server
@@ -170,7 +170,7 @@ static void receiveFile(int socket, char *destPath) {
 
   // loop until the full file has been received
   while (!end) {
-    char *msg = getValidMessage(socket,&numBytes);
+    char *msg = getValidMessage(socket,&numBytes, ENUM_BLOWFISH);
     if (msg == NULL) {
       sendMessageType2(socket,"Message receive timed out");
       exitProgram("Message receive timed out");
@@ -185,7 +185,7 @@ static void receiveFile(int socket, char *destPath) {
   }
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  startClientProtocol
  *  Description:  do the client end of the protocol to receive a file from a server
@@ -201,7 +201,7 @@ void startClientProtocol(int socket, char *sourcePath, char *destPath) {
 
   sendMessageType0(socket,getUserName());
 
-  msg = getValidMessage(socket,&numBytes);
+  msg = getValidMessage(socket,&numBytes, ENUM_RSA);
   if (msg == NULL) {
     sendMessageType2(socket,"Message receive timed out");
     exitProgram("Message receive timed out");

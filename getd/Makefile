@@ -1,4 +1,4 @@
-SRCS = getd.c 
+SRCS = getd.c
 TARGET	= getd
 
 ARCHIVE = libget$(ENV).a
@@ -24,17 +24,17 @@ RM = /bin/rm -f
 
 .SILENT:
 
-DEPENDS = $(addprefix .d_, $(basename $(SRCS))) 
+DEPENDS = $(addprefix .d_, $(basename $(SRCS)))
 
 LP = (
 RP = )
 ARCHIVE_OBJS = $(addsuffix $(RP),$(addprefix $(ARCHIVE)$(LP),$(notdir $(OBJS))))
 
-.SUFFIXES: .c 
+.SUFFIXES: .c
 
 $(TARGET): $(LIBS)
 	echo "Creating $@"
-	$(CC) $(CFLAGS) -o $@ $(LIBS) -lnanomsg
+	$(CC) $(CFLAGS) -o $@ $(LIBS) -lnanomsg -lcrypto
 
 $(ARCHIVE): $(ARCHIVE_OBJS)
 	echo "Generating" $(ARCHIVE)
@@ -71,10 +71,10 @@ clean:
 .d_%.y: %.y
 	echo "$(basename $<).c: $<" > $@
 
-.d_%: %.c 
+.d_%: %.c
 	echo  "Updating dependences for" $< "..."
 	$(CPP) -MM -MT '$(ARCHIVE)($(basename $<).o)' $(INCLUDES) -MF $@ $<
-	 
+
 
 #
 # This includes all of the dependence files. If the file does not exist,
@@ -82,5 +82,5 @@ clean:
 #
 
 include $(DEPENDS)
-	 
+
 # DO NOT DELETE THIS LINE -- make depend depends on it.

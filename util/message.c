@@ -2,14 +2,20 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-
 #include <message.h>
 #include <nanomsg/nn.h>
 #include <nanomsg/pair.h>
 #include <exit.h>
 #include <util/string_util.h>
 
-/** 
+#include <openssl/pem.h>
+#include <openssl/ssl.h>
+#include <openssl/rsa.h>
+#include <openssl/evp.h>
+#include <openssl/bio.h>
+#include <openssl/err.h>
+
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  getMessageType
  *  Description:  Get the type of the message from the buffer
@@ -22,7 +28,7 @@ unsigned char getMessageType (char *msg) {
    return ((Header *)msg)->messageType;
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  getMessageLength
  *  Description:  Get the length of a message from the header
@@ -32,14 +38,14 @@ unsigned char getMessageType (char *msg) {
  * =====================================================================================
  */
 static unsigned int getMessageLength (char *msg) {
-   return ((Header *)msg)->messageLength;
+  return ((Header *)msg)->messageLength;
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyType0Message
  *  Description:  verify the format of a type 0 message
- *	
+ *
  *	@param msg a message buffer
  *	@param msgLength the length of the message
  * =====================================================================================
@@ -51,11 +57,11 @@ static void verifyType0Message(char *msg, int msgLength) {
      messageError(INVALID_TYPE0_MSG,msg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyType1Message
  *  Description:  verify the format of a type 1 message
- *	
+ *
  *	@param msg a message buffer
  *	@param msgLength the length of the message
  * =====================================================================================
@@ -63,7 +69,7 @@ static void verifyType0Message(char *msg, int msgLength) {
 static void verifyType1Message(char *msg, int msgLength) {
    MessageType1 *message = (MessageType1 *)msg;
 
-   if (msgLength != sizeof(MessageType1) || message->header.messageLength != sizeof(MessageType1))
+   if (msgLength != (sizeof(MessageType1) + PADDING_TYPE1) || message->header.messageLength != (sizeof(MessageType1) + PADDING_TYPE1))
      messageError(INVALID_TYPE1_MSG,msg);
    else if (message->sidLength != SID_LENGTH)
      messageError(INVALID_TYPE1_MSG,msg);
@@ -71,11 +77,11 @@ static void verifyType1Message(char *msg, int msgLength) {
      messageError(INVALID_TYPE1_MSG,msg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyType2Message
  *  Description:  verify the format of a type 2 message
- *	
+ *
  *	@param msg a message buffer
  *	@param msgLength the length of the message
  * =====================================================================================
@@ -91,11 +97,11 @@ static void verifyType2Message(char *msg, int msgLength) {
      messageError(INVALID_TYPE2_MSG,msg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyType3Message
  *  Description:  verify the format of a type 3 message
- *	
+ *
  *	@param msg a message buffer
  *	@param msgLength the length of the message
  * =====================================================================================
@@ -115,11 +121,11 @@ static void verifyType3Message(char *msg, int msgLength) {
      messageError(INVALID_TYPE3_MSG,msg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyType4Message
  *  Description:  verify the format of a type 4 message
- *	
+ *
  *	@param msg a message buffer
  *	@param msgLength the length of the message
  * =====================================================================================
@@ -137,11 +143,11 @@ static void verifyType4Message(char *msg, int msgLength) {
      messageError(INVALID_TYPE4_MSG,msg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyType5Message
  *  Description:  verify the format of a type 5 message
- *	
+ *
  *	@param msg a message buffer
  *	@param msgLength the length of the message
  * =====================================================================================
@@ -157,11 +163,11 @@ static void verifyType5Message(char *msg, int msgLength) {
      messageError(INVALID_TYPE5_MSG,msg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyType6Message
  *  Description:  verify the format of a type 6 message
- *	
+ *
  *	@param msg a message buffer
  *	@param msgLength the length of the message
  * =====================================================================================
@@ -177,11 +183,11 @@ static void verifyType6Message(char *msg, int msgLength) {
      messageError(INVALID_TYPE5_MSG,msg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyType7Message
  *  Description:  verify the format of a type 7 message
- *	
+ *
  *	@param msg a message buffer
  *	@param msgLength the length of the message
  * =====================================================================================
@@ -191,11 +197,11 @@ static void verifyType7Message(char *msg, int msgLength) {
    messageError(INVALID_MESSAGE_TYPE,msg);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  verifyMessage
  *  Description:  verify the format of a message
- *	
+ *
  *	@param msg a message buffer
  *	@param msgLength the length of the message
  * =====================================================================================
@@ -242,18 +248,91 @@ static void verifyMessage(char *msg, int msgLength) {
 
 }
 
-/** 
+/**
+ * ===  FUNCTION  ======================================================================
+ *         Name:  readRSAFile
+ *  Description:  reads the public rsa key using the file path passed by message TYPE0
+ *
+ * 	@param socket a socket for communicating with a client
+ *	@param sourcePath a path to the source file
+ * =====================================================================================
+ */
+static bool readRSAPrivateKey(int socket, char *rsa_path, RSA **key) {
+  FILE *fp = fopen(rsa_path,"r");
+  printf("PATH: %s\n", rsa_path);
+  if (fp == NULL) {
+    sendMessageType2(socket,"File Error");
+    return false;
+  }
+
+  (*key) = PEM_read_RSAPrivateKey(fp, key, NULL, NULL);
+  if ((*key) == NULL) {
+    sendMessageType2(socket,"Private Key Error");
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * ===  FUNCTION  ======================================================================
+ *         Name:  public_encrypt
+ *  Description:  encrypts a message to rsa
+ *
+ *	@param the rsa key
+ *	@param the buffer containing the data
+ *	@param size of the data
+ * =====================================================================================
+ */
+char * public_encrypt(RSA *public_key, char *buff, unsigned int size) {
+  // Change buff size to multiple of 256
+  char *from = calloc(MAX_KEY, sizeof(char));
+  memcpy(from, buff, size);
+
+  // New buff to put data (also multiple 256)
+  char *to = calloc(MAX_KEY, sizeof(char));
+
+  // Encrypt (send type2)
+  printf("RSA ENCRYPTION: %d\n", RSA_public_encrypt(MAX_KEY, from, to, public_key, RSA_NO_PADDING));
+  printf("Encrypted to: %s\n", to);
+  return to;
+}
+
+/**
+ * ===  FUNCTION  ======================================================================
+ *         Name:  private_decrypt
+ *  Description:  decrypts a message to rsa
+ *
+ *	@param the rsa key
+ *	@param the buffer containing the data
+ *	@param size of the data
+ * =====================================================================================
+ */
+char * private_decrypt(RSA *private_key, char *buff, unsigned int size) {
+
+  // New buff to put data (also multiple 256)
+  char *to = calloc(MAX_KEY, sizeof(char));
+
+  // Encrypt (send type2)
+  printf("RSA DECRYPTION: %d\n", RSA_private_decrypt(MAX_KEY, buff, to, private_key, RSA_NO_PADDING));
+  printf("decrypted to: %s\n", to);
+  return to;
+}
+
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  getValidMessage
- *  Description:  receive a message and validiate it 
+ *  Description:  receive a message and validiate it
  *
  *	@param socket a socket for communcation
  *      @param msgLength a pointer to a integer for returning the message length
  *      @return a message if it is validated, if not the program exits
  * =====================================================================================
  */
-char *getValidMessage(int socket,int *msgLength) {
+char *getValidMessage(int socket,int *msgLength, ENCRYPTION encryption) {
   char *buff = NULL;
+  char *temp = NULL;
+  RSA *private_key;
 
   DEBUGL(printf("Receiving message on socket %d\n",socket));
   int numBytes = nn_recv(socket,&buff,NN_MSG,0);
@@ -261,6 +340,22 @@ char *getValidMessage(int socket,int *msgLength) {
   if (numBytes < 0) {
     *msgLength = 0;
     return NULL;
+  }
+
+  switch (encryption) {
+    case ENUM_NONE:
+    break;
+    case ENUM_RSA:
+      private_key = RSA_new();
+      if (!readRSAPrivateKey(socket, "../keys/private.pem", &private_key)) {
+        sendMessageType2(socket, "ERROR: RSA PRIVATE KEY ERROR");
+      }
+      buff = private_decrypt(private_key, buff, numBytes);
+    break;
+    case ENUM_BLOWFISH:
+    break;
+    default:
+      sendMessageType2(socket,"Encryption Type Error");
   }
 
   if (numBytes < sizeof(Header))
@@ -271,8 +366,8 @@ char *getValidMessage(int socket,int *msgLength) {
   char *msg = (char *)malloc(numBytes);
   memcpy(msg,buff,numBytes);
 
-  if (nn_freemsg(buff))
-    exitProgram("failure to free message buffer\n");
+  // if (nn_freemsg(buff))
+  //   exitProgram("failure to free message buffer\n");
 
   verifyMessage(msg,numBytes);
 
@@ -283,11 +378,11 @@ char *getValidMessage(int socket,int *msgLength) {
   return msg;
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  sendMessage
  *  Description:  send a message on the socket
- *	
+ *
  *	@param socket a socket for sending the message
  *	@param buff a message buffer
  *	@param size the size of the message in the buffer
@@ -303,7 +398,7 @@ static void sendMessage(int socket, char *buff,unsigned int size) {
     exitProgram(nssave(2,"Send Error: ",nn_strerror(nn_errno())));
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  sendMessageType0
  *  Description:  send a type 0 message on the socket
@@ -313,31 +408,37 @@ static void sendMessage(int socket, char *buff,unsigned int size) {
  * =====================================================================================
  */
 void sendMessageType0(int socket, char *distinguishedName) {
+  char *rsa_filename = "../keys/public.pem";
+  unsigned int rsa_file_length = strlen(rsa_filename);
 
-   MessageType0 *message = (MessageType0 *)malloc(sizeof(MessageType0));
+  MessageType0 *message = (MessageType0 *)malloc(sizeof(MessageType0));
 
-   DEBUGL(printf("Server Sending Type 0 Message on socket %d\n",socket));
+  DEBUGL(printf("Server Sending Type 0 Message on socket %d\n",socket));
 
-   if (message == NULL) {
-     perror("Error: ");
-     exit(-1);
-   }
+  if (message == NULL) {
+   perror("Error: ");
+   exit(-1);
+  }
 
-   unsigned int dn_length = strnlen(distinguishedName,DN_LENGTH+2);
+  unsigned int dn_length = strnlen(distinguishedName,DN_LENGTH+2);
 
-   if (dn_length == 0 || dn_length > DN_LENGTH)
-     messageError(INVALID_TYPE0_MSG,distinguishedName);
+  if (dn_length == 0 || dn_length > DN_LENGTH)
+   messageError(INVALID_TYPE0_MSG,distinguishedName);
 
-   message->dnLength = dn_length;
-   strcpy(message->distinguishedName,distinguishedName);
+  message->dnLength = dn_length;
+  strcpy(message->distinguishedName,distinguishedName);
 
-   message->header.messageType = TYPE0;
-   message->header.messageLength = sizeof(MessageType0);
+  message->header.messageType = TYPE0;
+  message->header.messageLength = sizeof(MessageType0);
+  printf("SIZE OF MESSAGE 0: %ld\n", sizeof(MessageType0));
+  // Path to RSA public key
+  strncpy(message->publicKey, rsa_filename, rsa_file_length);
+  message->publicKey[rsa_file_length] = '\0';
 
-   sendMessage(socket,(char *)message, sizeof(MessageType0));
+  sendMessage(socket,(char *)message, message->header.messageLength);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  sendMessageType1
  *  Description:  send a type 1 message on the socket
@@ -346,7 +447,7 @@ void sendMessageType0(int socket, char *distinguishedName) {
  *	@param sessionId the unique session id
  * =====================================================================================
  */
-void sendMessageType1(int socket, char *sessionId) {
+void sendMessageType1(int socket, char *sessionId, RSA *public_key) {
 
    MessageType1 *message = (MessageType1 *)malloc(sizeof(MessageType1));
 
@@ -366,12 +467,17 @@ void sendMessageType1(int socket, char *sessionId) {
    strcpy(message->sessionId,sessionId);
 
    message->header.messageType = TYPE1;
-   message->header.messageLength = sizeof(MessageType1);
+   message->header.messageLength = sizeof(MessageType1) + PADDING_TYPE1;
 
-   sendMessage(socket,(char *)message, sizeof(MessageType1));
+   printf("MESSAGE TYPE: %d\n", TYPE1);
+   printf("MESSAGE LENGTH: %ld\n", sizeof(MessageType1));
+
+   char * rsa_encrypted = public_encrypt(public_key, (char *)message, sizeof(MessageType1));
+
+   sendMessage(socket, rsa_encrypted, MAX_KEY);
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  sendMessageType2
  *  Description:  send a type 2 message
@@ -404,7 +510,7 @@ void sendMessageType2(int socket, char *errorMessage) {
    sendMessage(socket,(char *)message, sizeof(MessageType2));
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  sendMessageType3
  *  Description:  send a type 3 message
@@ -447,7 +553,7 @@ void sendMessageType3(int socket, char *sessionId, char *pathName) {
    sendMessage(socket,(char *)message, sizeof(MessageType3));
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  sendMessageType4
  *  Description:  send a type 4 message
@@ -488,7 +594,7 @@ void sendMessageType4(int socket, char *sessionId, char *contentBuffer, int cont
    sendMessage(socket,(char *)message, sizeof(MessageType4));
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  sendMessageType5
  *  Description:  send a type 5  message
@@ -522,7 +628,7 @@ void sendMessageType5(int socket, char *sessionId) {
    sendMessage(socket,(char *)message, sizeof(MessageType5));
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  sendMessageType5
  *  Description:  send a type 6 message
@@ -558,7 +664,7 @@ void sendMessageType6(int socket, char *sessionId) {
 
 static int timeout_val = 1000;
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  setUpClientSocket
  *  Description:  set up the socket for the client
@@ -588,7 +694,7 @@ void setUpClientSocket(int *socket, int *eid) {
   DEBUGL(printf("Client Socket = %d, eid = %d\n",*socket,*eid));
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  setUpServerSocket
  *  Description:  set up a socket for the server
@@ -615,7 +721,7 @@ void setUpServerSocket(int *socket,int *eid) {
   DEBUGL(printf("Server Socket = %d, eid = %d\n",*socket,*eid));
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  shutdownSocket
  *  Description:  shutdown a socket
@@ -632,7 +738,7 @@ void shutdownSocket(int socket, int eid) {
   }
 }
 
-/** 
+/**
  * ===  FUNCTION  ======================================================================
  *         Name:  messageError
  *  Description:  construct and print an error message for a protocol error and exit

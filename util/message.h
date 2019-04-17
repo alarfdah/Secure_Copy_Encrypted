@@ -3,6 +3,7 @@
 
 #include <limits.h>
 #include <util/general.h>
+#include <openssl/rsa.h>
 
 #define TYPE0 0
 #define TYPE1 1
@@ -13,10 +14,15 @@
 #define TYPE6 6
 #define TYPE7 7
 
+#define PADDING_TYPE0 96
+#define PADDING_TYPE1 96
+
+
 #define DN_LENGTH 32
 #define SID_LENGTH 128
 #define MAX_CONTENT_LENGTH 4096
 #define MAX_ERROR_MESSAGE 256
+#define MAX_KEY 256
 
 #define INVALID_MESSAGE_RECVD -1
 #define INVALID_MESSAGE_TYPE -2
@@ -33,6 +39,12 @@
 
 #define IPC_ADDR "ipc:///tmp/getd.ipc"
 
+typedef enum ENCRYPTION_e {
+  ENUM_NONE,
+  ENUM_RSA,
+  ENUM_BLOWFISH
+} ENCRYPTION;
+
 typedef struct _header {
   unsigned char messageType;
   unsigned int messageLength;
@@ -43,12 +55,14 @@ typedef struct _type0 {
   Header header;
   unsigned int dnLength;
   char distinguishedName[DN_LENGTH+1];
+  char publicKey[256];
 } MessageType0;
 
 typedef struct _type1 {
   Header header;
   unsigned int sidLength;
   char sessionId[SID_LENGTH+1];
+  char symmetricKey[16];
 } MessageType1;
 
 typedef struct _type2 {
@@ -86,10 +100,10 @@ typedef struct _type6 {
 } MessageType6;
 
 EXTERN(unsigned char, getMessageType, (char *msg));
-EXTERN(char *, getValidMessage, (int socket, int *numBytes));
+EXTERN(char *, getValidMessage, (int socket, int *numBytes, ENCRYPTION encryption));
 EXTERN(void, messageError, (int errorNumber, char *buff));
 EXTERN(void, sendMessageType0, (int socket, char *distinguishedName));
-EXTERN(void, sendMessageType1, (int socket, char *sessionId));
+EXTERN(void, sendMessageType1, (int socket, char *sessionId, RSA *public_key));
 EXTERN(void, sendMessageType2, (int socket, char *errorMessage));
 EXTERN(void, sendMessageType3, (int socket, char *sessiondId, char *pathName));
 EXTERN(void, sendMessageType4, (int socket, char *sessiondId, char *contentBuffer, int contentLength));
@@ -98,5 +112,7 @@ EXTERN(void, sendMessageType6, (int socket, char *sessionId));
 EXTERN(void, setUpClientSocket, (int *socket,int *eid));
 EXTERN(void, setUpServerSocket, (int *socket,int *eid));
 EXTERN(void, shutdownSocket, (int socket, int eid));
+// EXTERN(char *, public_encrypt, (RSA *public_key, char *buff, unsigned int size));
+// EXTERN(char *, private_encrypt, (RSA *private_key, char *buff, unsigned int size));
 
 #endif
