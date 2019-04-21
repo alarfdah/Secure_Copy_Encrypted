@@ -23,6 +23,8 @@
 #include <openssl/blowfish.h>
 #include <openssl/evp.h>
 
+
+// Reference: https://stackoverflow.com/questions/45497191/align-address-4-bytes-off-of-an-8-byte-boundary
 #define align_8(addr) (((addr) + 7) & (~7))
 
 static unsigned char key[16];
