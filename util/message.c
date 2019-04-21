@@ -3,10 +3,16 @@
 #include <unistd.h>
 #include <string.h>
 #include <message.h>
+#include <exit.h>
+#include <fcntl.h>
+
 #include <nanomsg/nn.h>
 #include <nanomsg/pair.h>
-#include <exit.h>
+
 #include <util/string_util.h>
+
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
@@ -14,7 +20,13 @@
 #include <openssl/evp.h>
 #include <openssl/bio.h>
 #include <openssl/err.h>
+#include <openssl/blowfish.h>
+#include <openssl/evp.h>
 
+#define align_8(addr) (((addr) + 7) & (~7))
+
+static unsigned char key[16];
+static unsigned char iv[8];
 /**
  * ===  FUNCTION  ======================================================================
  *         Name:  getMessageType
@@ -250,14 +262,229 @@ static void verifyMessage(char *msg, int msgLength) {
 
 /**
  * ===  FUNCTION  ======================================================================
- *         Name:  readRSAFile
+ *         Name:  generateKey
+ *  Description:  generates the symmetric key
+ *
+ * 	@param symmetric key
+ *	@param initialization vector
+ * =====================================================================================
+ */
+int generateKey () {
+  int i, j, fd;
+  if ((fd = open ("/dev/urandom", O_RDONLY)) == -1) {
+    perror ("open error");
+  }
+
+  if ((read (fd, key, 16)) == -1) {
+    perror ("read key error");
+  }
+
+  if ((read (fd, iv, 8)) == -1) {
+    perror ("read iv error");
+  }
+
+  printf ("128 bit key:\n");
+  for (i = 0; i < 16; i++) {
+    printf ("%4d ", key[i]);
+  }
+
+  printf ("\nInitialization vector\n");
+  for (i = 0; i < 8; i++) {
+    printf ("%4d ", iv[i]);
+  }
+  printf ("\n");
+
+
+  close (fd);
+  return 0;
+}
+
+
+/**
+ * ===  FUNCTION  ======================================================================
+ *         Name:  blowfishEncrypt
+ *  Description:
+ *
+ * =====================================================================================
+ */
+void setSymmetricKey(MessageType1 *msg) {
+  for (int i = 0; i < 16; i++) {
+    key[i] = msg->symmetricKey[i];
+  }
+
+  for (int i = 0; i < 8; i++) {
+    iv[i] = msg->initializationVector[i];
+  }
+
+  printf("Symmetric Key:\n");
+  for (int i = 0; i < 16; i++) {
+    printf("%4d ", key[i]);
+  }
+  printf("\n");
+  printf("Initialization Vector:\n");
+  for (int i = 0; i < 8; i++) {
+    printf("%4d ", iv[i]);
+  }
+  printf("\n");
+
+}
+
+/**
+ * ===  FUNCTION  ======================================================================
+ *         Name:  blowfishEncrypt
+ *  Description:
+ *
+ * =====================================================================================
+ */
+ int blowfishEncrypt (char *msg, char **encryptedMsg, unsigned int size) {
+  char *inbuff, *outbuf;
+
+  int olen, tlen;
+  EVP_CIPHER_CTX *ctx;
+
+  olen = 0;
+  tlen = 0;
+  // Create context
+  ctx = EVP_CIPHER_CTX_new();
+
+  // Initialize context
+  EVP_CIPHER_CTX_init (ctx);
+
+  // Initialize cipher using EVP_blowfish
+  EVP_EncryptInit(ctx, EVP_bf_cbc(), key, iv);
+
+  printf("ENCRYPT\n");
+  printf("Symmetric Key\n");
+  for (int i = 0; i < 16; i++) {
+    printf("%4d ", key[i]);
+  }
+  printf("\n");
+  printf("Initialization Vector\n");
+  for (int i = 0; i < 8; i++) {
+    printf("%4d ", iv[i]);
+  }
+  printf("\n");
+
+
+  outbuf = (unsigned char *) malloc(sizeof(unsigned char) * align_8(size));
+
+  memset(outbuf,'\0', align_8(size));
+
+  if (EVP_EncryptUpdate(ctx, outbuf, &olen, msg, size) != 1) {
+    printf ("error in encrypt update\n");
+    return 0;
+  }
+
+  if (EVP_EncryptFinal(ctx, outbuf + olen, &tlen) != 1) {
+    printf ("error in encrypt final\n");
+    return 0;
+  }
+
+  olen += tlen;
+  if (((*encryptedMsg) = calloc(olen, sizeof(unsigned char))) == NULL) {
+    printf("error callocing encrypt");
+    return 0;
+  }
+  memcpy((*encryptedMsg), outbuf, olen);
+
+  EVP_CIPHER_CTX_free(ctx);
+  return olen;
+}
+
+/**
+ * ===  FUNCTION  ======================================================================
+ *         Name:  blowfishDecrypt
+ *  Description:
+ *
+ * =====================================================================================
+ */
+int blowfishDecrypt(char *msg, char **decryptedMsg, int size) {
+  char *inbuff, *outbuf;
+  int olen, tlen, n;
+  EVP_CIPHER_CTX *ctx;
+  ctx = EVP_CIPHER_CTX_new();
+  EVP_CIPHER_CTX_init (ctx);
+  EVP_DecryptInit (ctx, EVP_bf_cbc(), key, iv);
+
+  printf("DECRYPT\n");
+  printf("Symmetric Key\n");
+  for (int i = 0; i < 16; i++) {
+    printf("%4d ", key[i]);
+  }
+  printf("\n");
+  printf("Initialization Vector\n");
+  for (int i = 0; i < 8; i++) {
+    printf("%4d ", iv[i]);
+  }
+  printf("\n");
+
+  olen = 0;
+  tlen = 0;
+
+  outbuf = (unsigned char *) malloc(sizeof(unsigned char) * align_8(size));
+
+  memset(outbuf,'\0', align_8(size));
+
+  if (EVP_DecryptUpdate(ctx, outbuf, &olen, msg, size) != 1) {
+    printf ("error in decrypt update\n");
+    return 0;
+  }
+
+  if (EVP_DecryptFinal(ctx, outbuf + olen, &tlen) != 1) {
+    printf ("error in decrypt final\n");
+    return 0;
+  }
+
+  olen += tlen;
+  if (((*decryptedMsg) = calloc(olen, sizeof(unsigned char))) == NULL) {
+    printf("error callocing decrypt");
+    return 0;
+  }
+  memcpy((*decryptedMsg), outbuf, olen);
+
+  EVP_CIPHER_CTX_free(ctx);
+  return olen;
+}
+
+
+/**
+ * ===  FUNCTION  ======================================================================
+ *         Name:  readRSAPublicKey
  *  Description:  reads the public rsa key using the file path passed by message TYPE0
  *
  * 	@param socket a socket for communicating with a client
  *	@param sourcePath a path to the source file
+ *  @param the RSA key
  * =====================================================================================
  */
-static bool readRSAPrivateKey(int socket, char *rsa_path, RSA **key) {
+bool readRSAPublicKey(int socket, char *rsa_path, RSA **key) {
+  FILE *fp = fopen(rsa_path,"r");
+  printf("PATH: %s\n", rsa_path);
+  if (fp == NULL) {
+    sendMessageType2(socket,"File Error");
+    return false;
+  }
+
+  (*key) = PEM_read_RSA_PUBKEY(fp, key, NULL, NULL);
+  if ((*key) == NULL) {
+    sendMessageType2(socket,"Public Key Error");
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * ===  FUNCTION  ======================================================================
+ *         Name:  readRSAPrivateKey
+ *  Description:  reads the private rsa key using the file path passed by message TYPE0
+ *
+ * 	@param socket a socket for communicating with a client
+ *	@param sourcePath a path to the source file
+ *  @param the RSA key
+ * =====================================================================================
+ */
+bool readRSAPrivateKey(int socket, char *rsa_path, RSA **key) {
   FILE *fp = fopen(rsa_path,"r");
   printf("PATH: %s\n", rsa_path);
   if (fp == NULL) {
@@ -276,7 +503,7 @@ static bool readRSAPrivateKey(int socket, char *rsa_path, RSA **key) {
 
 /**
  * ===  FUNCTION  ======================================================================
- *         Name:  public_encrypt
+ *         Name:  publicRSAEncrypt
  *  Description:  encrypts a message to rsa
  *
  *	@param the rsa key
@@ -284,10 +511,11 @@ static bool readRSAPrivateKey(int socket, char *rsa_path, RSA **key) {
  *	@param size of the data
  * =====================================================================================
  */
-char * public_encrypt(RSA *public_key, char *buff, unsigned int size) {
+char * publicRSAEncrypt(RSA *public_key, char *buff, unsigned int size) {
   // Change buff size to multiple of 256
   char *from = calloc(MAX_KEY, sizeof(char));
   memcpy(from, buff, size);
+  printf("Size before encryption: %u\n", size);
 
   // New buff to put data (also multiple 256)
   char *to = calloc(MAX_KEY, sizeof(char));
@@ -300,7 +528,7 @@ char * public_encrypt(RSA *public_key, char *buff, unsigned int size) {
 
 /**
  * ===  FUNCTION  ======================================================================
- *         Name:  private_decrypt
+ *         Name:  privateRSADecrypt
  *  Description:  decrypts a message to rsa
  *
  *	@param the rsa key
@@ -308,7 +536,7 @@ char * public_encrypt(RSA *public_key, char *buff, unsigned int size) {
  *	@param size of the data
  * =====================================================================================
  */
-char * private_decrypt(RSA *private_key, char *buff, unsigned int size) {
+char * privateRSADecrypt(RSA *private_key, char *buff, unsigned int size) {
 
   // New buff to put data (also multiple 256)
   char *to = calloc(MAX_KEY, sizeof(char));
@@ -331,7 +559,7 @@ char * private_decrypt(RSA *private_key, char *buff, unsigned int size) {
  */
 char *getValidMessage(int socket,int *msgLength, ENCRYPTION encryption) {
   char *buff = NULL;
-  char *temp = NULL;
+  char *decryptedMsg = NULL;
   RSA *private_key;
 
   DEBUGL(printf("Receiving message on socket %d\n",socket));
@@ -350,9 +578,12 @@ char *getValidMessage(int socket,int *msgLength, ENCRYPTION encryption) {
       if (!readRSAPrivateKey(socket, "../keys/private.pem", &private_key)) {
         sendMessageType2(socket, "ERROR: RSA PRIVATE KEY ERROR");
       }
-      buff = private_decrypt(private_key, buff, numBytes);
+      buff = privateRSADecrypt(private_key, buff, numBytes);
     break;
     case ENUM_BLOWFISH:
+      blowfishDecrypt(buff, &decryptedMsg, numBytes);
+      buff = decryptedMsg;
+      numBytes = ((Header *)buff)->messageLength;
     break;
     default:
       sendMessageType2(socket,"Encryption Type Error");
@@ -431,6 +662,7 @@ void sendMessageType0(int socket, char *distinguishedName) {
   message->header.messageType = TYPE0;
   message->header.messageLength = sizeof(MessageType0);
   printf("SIZE OF MESSAGE 0: %ld\n", sizeof(MessageType0));
+
   // Path to RSA public key
   strncpy(message->publicKey, rsa_filename, rsa_file_length);
   message->publicKey[rsa_file_length] = '\0';
@@ -472,7 +704,17 @@ void sendMessageType1(int socket, char *sessionId, RSA *public_key) {
    printf("MESSAGE TYPE: %d\n", TYPE1);
    printf("MESSAGE LENGTH: %ld\n", sizeof(MessageType1));
 
-   char * rsa_encrypted = public_encrypt(public_key, (char *)message, sizeof(MessageType1));
+   // Initialize symmetricKey & initializationVector
+   generateKey();
+   for (int i = 0; i < 16; i++) {
+     message->symmetricKey[i] = key[i];
+   }
+   for (int i = 0; i < 8; i++) {
+     message->initializationVector[i] = iv[i];
+   }
+   // Encrypt type 1 message
+   char * rsa_encrypted = publicRSAEncrypt(public_key, (char *)message,
+    sizeof(MessageType1));
 
    sendMessage(socket, rsa_encrypted, MAX_KEY);
 }
@@ -520,37 +762,48 @@ void sendMessageType2(int socket, char *errorMessage) {
  *	@param pathName the path to the source file
  * =====================================================================================
  */
-void sendMessageType3(int socket, char *sessionId, char *pathName) {
+void sendMessageType3(int socket, char *sessionId, char *pathName,
+  unsigned char key[], unsigned char iv[]) {
+  char *encryptedMessage;
+  unsigned int encryptLength;
 
-   MessageType3 *message = (MessageType3 *)malloc(sizeof(MessageType3));
+  MessageType3 *message = (MessageType3 *)malloc(sizeof(MessageType3));
 
-   DEBUGL(printf("Sending Type 3 Message\n"));
+  DEBUGL(printf("Sending Type 3 Message\n"));
 
-   if (message == NULL) {
-     perror("Error: ");
-     exit(-1);
-   }
+  if (message == NULL) {
+   perror("Error: ");
+   exit(-1);
+  }
 
-   unsigned int sidLength = strnlen(sessionId,SID_LENGTH+2);
+  unsigned int sidLength = strnlen(sessionId,SID_LENGTH+2);
 
-   if (sidLength != SID_LENGTH)
-     messageError(INVALID_TYPE3_MSG,sessionId);
+  if (sidLength != SID_LENGTH)
+   messageError(INVALID_TYPE3_MSG,sessionId);
 
-   message->sidLength = sidLength;
-   strcpy(message->sessionId,sessionId);
+  message->sidLength = sidLength;
+  strcpy(message->sessionId,sessionId);
 
-   unsigned int pathLength = strnlen(pathName,PATH_MAX+2);
+  unsigned int pathLength = strnlen(pathName,PATH_MAX+2);
 
-   if (pathLength == 0 || pathLength > PATH_MAX)
-     messageError(INVALID_TYPE3_MSG,pathName);
+  if (pathLength == 0 || pathLength > PATH_MAX)
+   messageError(INVALID_TYPE3_MSG,pathName);
 
-   message->pathLength = pathLength;
-   strcpy(message->pathName,pathName);
+  message->pathLength = pathLength;
+  strcpy(message->pathName,pathName);
 
-   message->header.messageType = TYPE3;
-   message->header.messageLength = sizeof(MessageType3);
+  message->header.messageType = TYPE3;
+  message->header.messageLength = sizeof(MessageType3);
 
-   sendMessage(socket,(char *)message, sizeof(MessageType3));
+  // Encrypt type 3
+  if ((encryptLength = blowfishEncrypt((char *)message,
+   &encryptedMessage, sizeof(MessageType3))) == 0) {
+    printf("Error in blowfish encryption\n");
+  } else {
+    printf("Blowfish Encrypted:\n");
+    printf("%s\n", encryptedMessage);
+    sendMessage(socket, encryptedMessage, encryptLength);
+  }
 }
 
 /**
@@ -564,34 +817,42 @@ void sendMessageType3(int socket, char *sessionId, char *pathName) {
  * =====================================================================================
  */
 void sendMessageType4(int socket, char *sessionId, char *contentBuffer, int contentLength) {
+  char *encryptedMessage;
+  unsigned int encryptLength;
+  MessageType4 *message = (MessageType4 *)malloc(sizeof(MessageType4));
 
-   MessageType4 *message = (MessageType4 *)malloc(sizeof(MessageType4));
+  DEBUGL(printf("Sending Type 4 Message\n"));
 
-   DEBUGL(printf("Sending Type 4 Message\n"));
+  if (message == NULL) {
+   perror("Error: ");
+   exit(-1);
+  }
 
-   if (message == NULL) {
-     perror("Error: ");
-     exit(-1);
-   }
+  unsigned int sidLength = strnlen(sessionId,SID_LENGTH+2);
 
-   unsigned int sidLength = strnlen(sessionId,SID_LENGTH+2);
+  if (sidLength != SID_LENGTH)
+   messageError(INVALID_TYPE4_MSG,sessionId);
 
-   if (sidLength != SID_LENGTH)
-     messageError(INVALID_TYPE4_MSG,sessionId);
+  message->sidLength = sidLength;
+  strcpy(message->sessionId,sessionId);
 
-   message->sidLength = sidLength;
-   strcpy(message->sessionId,sessionId);
+  if (contentLength == 0 || contentLength > MAX_CONTENT_LENGTH)
+   messageError(INVALID_TYPE4_MSG,contentBuffer);
 
-   if (contentLength == 0 || contentLength > MAX_CONTENT_LENGTH)
-     messageError(INVALID_TYPE4_MSG,contentBuffer);
+  message->contentLength = contentLength;
+  memcpy(message->contentBuffer,contentBuffer,contentLength);
 
-   message->contentLength = contentLength;
-   memcpy(message->contentBuffer,contentBuffer,contentLength);
+  message->header.messageType = TYPE4;
+  message->header.messageLength = sizeof(MessageType4);
 
-   message->header.messageType = TYPE4;
-   message->header.messageLength = sizeof(MessageType4);
-
-   sendMessage(socket,(char *)message, sizeof(MessageType4));
+  if ((encryptLength = blowfishEncrypt((char *)message,
+  &encryptedMessage, sizeof(MessageType4))) == 0) {
+   printf("Error in blowfish encryption\n");
+  } else {
+   printf("Blowfish Encrypted:\n");
+   printf("%s\n", encryptedMessage);
+   sendMessage(socket, encryptedMessage, encryptLength);
+  }
 }
 
 /**
@@ -604,28 +865,36 @@ void sendMessageType4(int socket, char *sessionId, char *contentBuffer, int cont
  * =====================================================================================
  */
 void sendMessageType5(int socket, char *sessionId) {
+  char *encryptedMessage;
+  unsigned int encryptLength;
+  MessageType5 *message = (MessageType5 *)malloc(sizeof(MessageType5));
 
-   MessageType5 *message = (MessageType5 *)malloc(sizeof(MessageType5));
+  DEBUGL(printf("Sending Type 5 Message\n"));
 
-   DEBUGL(printf("Sending Type 5 Message\n"));
+  if (message == NULL) {
+   perror("Error: ");
+   exit(-5);
+  }
 
-   if (message == NULL) {
-     perror("Error: ");
-     exit(-5);
-   }
+  unsigned int sidLength = strnlen(sessionId,SID_LENGTH+2);
 
-   unsigned int sidLength = strnlen(sessionId,SID_LENGTH+2);
+  if (sidLength != SID_LENGTH)
+   messageError(INVALID_TYPE5_MSG,sessionId);
 
-   if (sidLength != SID_LENGTH)
-     messageError(INVALID_TYPE5_MSG,sessionId);
+  message->sidLength = sidLength;
+  strcpy(message->sessionId,sessionId);
 
-   message->sidLength = sidLength;
-   strcpy(message->sessionId,sessionId);
+  message->header.messageType = TYPE5;
+  message->header.messageLength = sizeof(MessageType5);
 
-   message->header.messageType = TYPE5;
-   message->header.messageLength = sizeof(MessageType5);
-
-   sendMessage(socket,(char *)message, sizeof(MessageType5));
+  if ((encryptLength = blowfishEncrypt((char *)message,
+   &encryptedMessage, sizeof(MessageType5))) == 0) {
+    printf("Error in blowfish encryption\n");
+  } else {
+    printf("Blowfish Encrypted:\n");
+    printf("%s\n", encryptedMessage);
+    sendMessage(socket, encryptedMessage, encryptLength);
+  }
 }
 
 /**
@@ -638,28 +907,36 @@ void sendMessageType5(int socket, char *sessionId) {
  * =====================================================================================
  */
 void sendMessageType6(int socket, char *sessionId) {
+  char *encryptedMessage;
+  unsigned int encryptLength;
+  MessageType6 *message = (MessageType6 *)malloc(sizeof(MessageType6));
 
-   MessageType6 *message = (MessageType6 *)malloc(sizeof(MessageType6));
+  DEBUGL(printf("Sending Type 6 Message\n"));
 
-   DEBUGL(printf("Sending Type 6 Message\n"));
+  if (message == NULL) {
+   perror("Error: ");
+   exit(-1);
+  }
 
-   if (message == NULL) {
-     perror("Error: ");
-     exit(-1);
-   }
+  unsigned int sidLength = strnlen(sessionId,SID_LENGTH+2);
 
-   unsigned int sidLength = strnlen(sessionId,SID_LENGTH+2);
+  if (sidLength != SID_LENGTH)
+   messageError(INVALID_TYPE5_MSG,sessionId);
 
-   if (sidLength != SID_LENGTH)
-     messageError(INVALID_TYPE5_MSG,sessionId);
+  message->sidLength = sidLength;
+  strcpy(message->sessionId,sessionId);
 
-   message->sidLength = sidLength;
-   strcpy(message->sessionId,sessionId);
+  message->header.messageType = TYPE6;
+  message->header.messageLength = sizeof(MessageType6);
 
-   message->header.messageType = TYPE6;
-   message->header.messageLength = sizeof(MessageType6);
-
-   sendMessage(socket,(char *)message, sizeof(MessageType6));
+  if ((encryptLength = blowfishEncrypt((char *)message,
+   &encryptedMessage, sizeof(MessageType6))) == 0) {
+    printf("Error in blowfish encryption\n");
+  } else {
+    printf("Blowfish Encrypted:\n");
+    printf("%s\n", encryptedMessage);
+    sendMessage(socket, encryptedMessage, encryptLength);
+  }
 }
 
 static int timeout_val = 1000;

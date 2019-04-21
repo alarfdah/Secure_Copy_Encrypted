@@ -14,9 +14,11 @@
 #define TYPE6 6
 #define TYPE7 7
 
-#define PADDING_TYPE0 96
-#define PADDING_TYPE1 96
 
+#define IP_SIZE 1024
+#define OP_SIZE 1032
+
+#define PADDING_TYPE1 88
 
 #define DN_LENGTH 32
 #define SID_LENGTH 128
@@ -62,7 +64,8 @@ typedef struct _type1 {
   Header header;
   unsigned int sidLength;
   char sessionId[SID_LENGTH+1];
-  char symmetricKey[16];
+  unsigned char symmetricKey[16];
+  unsigned char initializationVector[8];
 } MessageType1;
 
 typedef struct _type2 {
@@ -105,13 +108,15 @@ EXTERN(void, messageError, (int errorNumber, char *buff));
 EXTERN(void, sendMessageType0, (int socket, char *distinguishedName));
 EXTERN(void, sendMessageType1, (int socket, char *sessionId, RSA *public_key));
 EXTERN(void, sendMessageType2, (int socket, char *errorMessage));
-EXTERN(void, sendMessageType3, (int socket, char *sessiondId, char *pathName));
+EXTERN(void, sendMessageType3, (int socket, char *sessiondId, char *pathName, unsigned char key[], unsigned char iv[]));
 EXTERN(void, sendMessageType4, (int socket, char *sessiondId, char *contentBuffer, int contentLength));
 EXTERN(void, sendMessageType5, (int socket, char *sessionId));
 EXTERN(void, sendMessageType6, (int socket, char *sessionId));
 EXTERN(void, setUpClientSocket, (int *socket,int *eid));
 EXTERN(void, setUpServerSocket, (int *socket,int *eid));
 EXTERN(void, shutdownSocket, (int socket, int eid));
+EXTERN(void, setSymmetricKey, (MessageType1 *msg));
+EXTERN(bool, readRSAPublicKey, (int socket, char * rsa_path, RSA **key));
 // EXTERN(char *, public_encrypt, (RSA *public_key, char *buff, unsigned int size));
 // EXTERN(char *, private_encrypt, (RSA *private_key, char *buff, unsigned int size));
 

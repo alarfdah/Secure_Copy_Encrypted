@@ -38,7 +38,6 @@ static void invalidMessage(int socket, int mType) {
 static void setSessionId(MessageType1 *msg) {
   strncpy(sessionId,msg->sessionId,msg->sidLength);
   sessionId[msg->sidLength] = '\0';
-
 }
 
 /**
@@ -71,9 +70,10 @@ static void emitType2MessageAndExit(MessageType2 *msg) {
 static void processType1Message(int socket, char *msg) {
   unsigned char mType = getMessageType(msg);
 
-  if (mType == TYPE1)
+  if (mType == TYPE1) {
     setSessionId((MessageType1 *)msg);
-  else if (mType == TYPE2) {
+    setSymmetricKey((MessageType1 *)msg);
+  } else if (mType == TYPE2) {
     emitType2MessageAndExit((MessageType2 *)msg);
   }
   else
@@ -209,7 +209,8 @@ void startClientProtocol(int socket, char *sourcePath, char *destPath) {
 
   processType1Message(socket,msg);
 
-  sendMessageType3(socket, sessionId, sourcePath);
+  sendMessageType3(socket, sessionId, sourcePath,
+     ((MessageType1 *)msg)->symmetricKey, ((MessageType1 *)msg)->initializationVector);
 
   receiveFile(socket,destPath);
 }

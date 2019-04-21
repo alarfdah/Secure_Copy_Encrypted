@@ -108,32 +108,6 @@ static bool readAndSendFile(int socket,char *sourcePath) {
 
 }
 
-/**
- * ===  FUNCTION  ======================================================================
- *         Name:  readRSAPublicKey
- *  Description:  reads the public rsa key using the file path passed by message TYPE0
- *
- * 	@param socket a socket for communicating with a client
- *	@param sourcePath a path to the source file
- * =====================================================================================
- */
-static bool readRSAPublicKey(int socket, char *rsa_path, RSA **key) {
-  FILE *fp = fopen(rsa_path,"r");
-  printf("PATH: %s\n", rsa_path);
-  if (fp == NULL) {
-    sendMessageType2(socket,"File Error");
-    return false;
-  }
-
-  (*key) = PEM_read_RSA_PUBKEY(fp, key, NULL, NULL);
-  if ((*key) == NULL) {
-    sendMessageType2(socket,"Public Key Error");
-    return false;
-  }
-
-  return true;
-}
-
 int main(const int argc, const char **argv) {
   RSA *rsa_public_key = RSA_new();
   setUpServerSocket(&socket,&eid);
